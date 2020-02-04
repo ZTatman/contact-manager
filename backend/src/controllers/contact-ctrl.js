@@ -110,13 +110,6 @@ deleteContact = async (req, res) => {
 			})
 		}
 
-		if (!contact) {
-			return res.status(404).json({
-				success:false,
-				error: 'Contact not found.'
-			})
-		}
-
 		return res.status(200).json({
 			success: true,
 			data: contact
@@ -160,25 +153,82 @@ getContactById = async (req, res) => {
 	})
 }
 
-getContacts = async (req, res) => {
-
+getContactsByUsername = async (req, res) => {
+	
 	const errors = validationResult(req)
-
+	
 	if (!errors.isEmpty()) {
 		return res.status(400).json({ error: errors.array() })
 	}
+	
+	const regex = new RegExp(req.query.name, 'i');
+	await User.findById(req.user)
+	.then(user => {
+		
+		if (!user) {
+			return res.status(400).json({ error: "UserNotFound"})
+		}
+		
+		var query = {
+			name: regex,
+			_id: { 
+				$in: user.contacts 
+			}
+		}
 
-	return User.findById(req.user)
-		.then(user => {
-			if (!user) {
-				return res.status(400).json({ error: "UserNotFound"})
+		console.log(`LIMIT=${req.query.limit}; OFFSET=${req.query.offset}`)
+		
+		const limit = req.query.limit || 10;
+
+		var options = {
+			offset: req.query.offset || 0,
+			limit: limit
+		}
+
+		Contact.paginate(query, options).then(contacts_docs => {
+			if (!contacts_docs) {
+				return res.status(404).json({
+					success: false,
+					error: 'No contact found.'
+				})
 			}
 
-			return res.status(200).json({ contacts: user.contacts })
+			console.log(req.query.offset)
+			const contacts = contacts_docs.docs
+
+			const contacts_sorted = contacts.sort((a, b) => {
+				var nameA = a.name.toUpperCase();
+				var nameB = b.name.toUpperCase();
+				if (nameA < nameB) {
+					return -1;
+				}
+				if (nameA > nameB) {
+					return 1;
+				}
+
+				return 0;
+			})
+
+			return res.status(200).json({
+				success: true,
+				hasMore: contacts_sorted.length < limit ? false : true,
+				data: contacts_sorted
+			})
+
 		})
 		.catch(error => {
-			return res.status(400).json({ error: error })
+			console.log(error)
+			if (error) {
+				return res.status(400).json({
+					success: false,
+					error: error
+				})
+			}
 		})
+	}) 
+	.catch(err => {
+		return res.status(400).json({ error: "UnknownError", err })
+	})
 }
 
 validate = (method) => {
@@ -215,6 +265,12 @@ validate = (method) => {
 
 			]
 		}
+
+		case 'getContactsByUsername': {
+			return [
+
+			]
+		}
 	}
 }
 
@@ -242,8 +298,8 @@ module.exports = {
 	createContact,
 	updateContact,
 	deleteContact,
-	getContacts,
 	getContactById,
+	getContactsByUsername,
 	validate,
 	contactForUser
 }
